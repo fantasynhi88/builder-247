@@ -42,3 +42,18 @@ class Log(SQLModel, table=True):
     stack_trace: Optional[str] = None
     request_id: Optional[str] = None
     additional_data: Optional[str] = None
+
+
+class Transaction(SQLModel, table=True):
+    """Transaction tracking model."""
+
+    id: Optional[int] = Field(default=None, primary_key=True)
+    transaction_type: str
+    description: Optional[str] = None
+    amount: float
+    timestamp: datetime = Field(default_factory=datetime.utcnow)
+    status: str = Field(default="pending")  # e.g., pending, completed, failed
+    metadata: Optional[str] = None  # JSON-encoded additional transaction details
+    request_id: Optional[str] = None  # for tracking across systems
+    source: Optional[str] = None  # origin of the transaction
+    destination: Optional[str] = None  # destination of the transaction
