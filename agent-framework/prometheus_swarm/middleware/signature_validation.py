@@ -1,5 +1,6 @@
 """Signature Validation Middleware."""
 
+import inspect
 from functools import wraps
 from typing import Callable, Any, Dict, Optional
 
@@ -57,7 +58,17 @@ def validate_signature(
             validated_data = validation_result.get('data', {})
             kwargs['validated_payload'] = validated_data
 
-            # Call the original function
-            return func(*args, **kwargs)
+            # Inspect function signature to filter arguments
+            sig = inspect.signature(func)
+            func_params = list(sig.parameters.keys())
+
+            # Filter out any extra arguments not in the function's signature
+            filtered_kwargs = {
+                k: v for k, v in kwargs.items() 
+                if k in func_params
+            }
+
+            # Call the original function with filtered kwargs
+            return func(*args, **filtered_kwargs)
         return wrapper
     return decorator
