@@ -4,7 +4,8 @@ import pytest
 from sqlmodel import SQLModel, create_engine, Session
 from prometheus_swarm.database.transaction_dal import TransactionDAL
 from prometheus_swarm.database.models import Transaction
-from prometheus_swarm.database.database import get_engine, get_session
+from prometheus_swarm.database.config import engine as database_engine
+from prometheus_swarm.database.database import get_session
 
 
 @pytest.fixture(scope="module")
@@ -14,16 +15,12 @@ def setup_db():
     test_engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
     SQLModel.metadata.create_all(test_engine)
 
-    # Patch get_engine and get_session to use test database
-    def mock_get_engine():
-        return test_engine
-
+    # Patch get_session to use test database
     def mock_get_session():
         return Session(test_engine)
 
-    # Replace original functions with mocks
+    # Replace original function with mock
     import prometheus_swarm.database.database
-    prometheus_swarm.database.database.get_engine = mock_get_engine
     prometheus_swarm.database.database.get_session = mock_get_session
 
     yield
