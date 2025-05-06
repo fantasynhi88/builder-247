@@ -1,17 +1,88 @@
 import { Request, Response, NextFunction } from 'express';
 import crypto from 'crypto';
+import winston from 'winston';
+
+// Configure logger
+const logger = winston.createLogger({
+  level: 'info',
+  format: winston.format.combine(
+    winston.format.timestamp(),
+    winston.format.json()
+  ),
+  transports: [
+    new winston.transports.Console(),
+    new winston.transports.File({ filename: 'nonce-validation.log' })
+  ]
+});
 
 // Configuration for nonce validation
 const NONCE_EXPIRY_SECONDS = 300; // 5 minutes
-const NONCE_CACHE = new Map<string, number>();
+const MAX_NONCE_CACHE_SIZE = 10000;
 
-/**
- * Generates a cryptographically secure nonce
- * @returns {string} A unique nonce
- */
-export function generateNonce(): string {
-  return crypto.randomBytes(32).toString('hex');
+interface NonceEntry {
+  timestamp: number;
+  used: boolean;
 }
+
+class NonceManager {
+  private nonceCache: Map<string, NonceEntry> = new Map();
+
+  /**
+   * Generate a cryptographically secure nonce
+   * @returns {string} A unique nonce
+   */
+  generateNonce(): string {
+    return crypto.randomBytes(32).toString('hex');
+  }
+
+  /**
+   * Validate and track nonce
+   * @param nonce Nonce to validate
+   * @param requestTimestamp Timestamp of the request
+   * @returns {boolean} Whether the nonce is valid
+   */
+  validateNonce(nonce: string, requestTimestamp: number): boolean {
+    const currentTime = Math.floor(Date.now() / 1000);
+
+    // Check nonce expiry
+    if (currentTime - requestTimestamp > NONCE_EXPIRY_SECONDS) {
+      return false;
+    }
+
+    // Check nonce uniqueness
+    const existingEntry = this.nonceCache.get(nonce);
+    if (existingEntry && existingEntry.used) {
+      return false;
+    }
+
+    // Store or update nonce entry
+    this.nonceCache.set(nonce, { 
+      timestamp: currentTime, 
+      used: true 
+    });
+
+    // Periodically clean up expired nonces
+    this.cleanupCache(currentTime);
+
+    return true;
+  }
+
+  /**
+   * Clean up expired nonces from cache
+   * @param currentTime Current timestamp
+   */
+  private cleanupCache(currentTime: number): void {
+    if (this.nonceCache.size > MAX_NONCE_CACHE_SIZE) {
+      for (const [key, entry] of this.nonceCache.entries()) {
+        if (currentTime - entry.timestamp > NONCE_EXPIRY_SECONDS) {
+          this.nonceCache.delete(key);
+        }
+      }
+    }
+  }
+}
+
+const nonceManager = new NonceManager();
 
 /**
  * Middleware to validate request nonce
@@ -20,60 +91,80 @@ export function generateNonce(): string {
  * @param next Express next function
  */
 export function nonceMiddleware(req: Request, res: Response, next: NextFunction) {
-  // Skip nonce validation for certain routes or methods if needed
-  const nonceExemptRoutes = ['/healthz', '/metrics'];
+  // Skip nonce validation for certain routes
+  const nonceExemptRoutes = ['/healthz', '/metrics', '/hello'];
   if (nonceExemptRoutes.includes(req.path)) {
     return next();
   }
 
+  const startTime = Date.now();
   const nonce = req.headers['x-request-nonce'] as string;
   const timestamp = req.headers['x-request-timestamp'] as string;
 
-  // Validate nonce presence
-  if (!nonce || !timestamp) {
-    return res.status(400).json({
-      error: 'Missing nonce or timestamp',
-      message: 'Request must include X-Request-Nonce and X-Request-Timestamp headers'
-    });
-  }
+  // Log nonce validation attempt
+  const logContext = {
+    path: req.path,
+    method: req.method,
+    ip: req.ip
+  };
 
-  // Validate timestamp is a number
-  const requestTimestamp = parseInt(timestamp, 10);
-  if (isNaN(requestTimestamp)) {
-    return res.status(400).json({
-      error: 'Invalid timestamp',
-      message: 'Timestamp must be a valid number'
-    });
-  }
-
-  // Check nonce expiry
-  const currentTime = Math.floor(Date.now() / 1000);
-  if (currentTime - requestTimestamp > NONCE_EXPIRY_SECONDS) {
-    return res.status(400).json({
-      error: 'Nonce expired',
-      message: 'Request nonce has expired'
-    });
-  }
-
-  // Check nonce uniqueness
-  if (NONCE_CACHE.has(nonce)) {
-    return res.status(400).json({
-      error: 'Nonce already used',
-      message: 'This nonce has already been used'
-    });
-  }
-
-  // Store nonce in cache with current timestamp
-  NONCE_CACHE.set(nonce, currentTime);
-
-  // Clean up expired nonces periodically
-  if (NONCE_CACHE.size > 1000) {
-    for (const [key, value] of NONCE_CACHE.entries()) {
-      if (currentTime - value > NONCE_EXPIRY_SECONDS) {
-        NONCE_CACHE.delete(key);
-      }
+  try {
+    // Validate nonce presence
+    if (!nonce || !timestamp) {
+      logger.warn('Nonce validation failed: Missing headers', {
+        ...logContext,
+        reason: 'Missing nonce or timestamp'
+      });
+      return res.status(400).json({
+        error: 'Invalid Request',
+        message: 'Nonce and timestamp headers are required'
+      });
     }
-  }
 
-  next();
+    // Validate timestamp is a number
+    const requestTimestamp = parseInt(timestamp, 10);
+    if (isNaN(requestTimestamp)) {
+      logger.warn('Nonce validation failed: Invalid timestamp', {
+        ...logContext,
+        reason: 'Invalid timestamp format'
+      });
+      return res.status(400).json({
+        error: 'Invalid Request',
+        message: 'Timestamp must be a valid number'
+      });
+    }
+
+    // Validate nonce
+    const isValid = nonceManager.validateNonce(nonce, requestTimestamp);
+    if (!isValid) {
+      logger.warn('Nonce validation failed', {
+        ...logContext,
+        reason: 'Invalid or reused nonce'
+      });
+      return res.status(400).json({
+        error: 'Invalid Nonce',
+        message: 'Nonce is invalid, expired, or already used'
+      });
+    }
+
+    // Log successful validation
+    logger.info('Nonce validated successfully', {
+      ...logContext,
+      validationTime: Date.now() - startTime
+    });
+
+    next();
+  } catch (error) {
+    logger.error('Unexpected error in nonce middleware', {
+      ...logContext,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    });
+    res.status(500).json({
+      error: 'Internal Server Error',
+      message: 'An unexpected error occurred'
+    });
+  }
 }
+
+// Export utilities for testing and external use
+export { nonceManager };
