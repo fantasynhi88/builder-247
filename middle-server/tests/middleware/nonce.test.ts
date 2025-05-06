@@ -1,5 +1,24 @@
-import { generateNonce, nonceMiddleware } from '../../src/middleware/nonce';
+import { nonceMiddleware, nonceManager } from '../../src/middleware/nonce';
 import { Request, Response, NextFunction } from 'express';
+import winston from 'winston';
+
+// Mock winston logger
+jest.mock('winston', () => ({
+  createLogger: jest.fn(() => ({
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn()
+  })),
+  format: {
+    combine: jest.fn(),
+    timestamp: jest.fn(),
+    json: jest.fn()
+  },
+  transports: {
+    Console: jest.fn(),
+    File: jest.fn()
+  }
+}));
 
 describe('Nonce Middleware', () => {
   let mockRequest: Partial<Request>;
@@ -9,6 +28,8 @@ describe('Nonce Middleware', () => {
   beforeEach(() => {
     mockRequest = {
       path: '/test',
+      method: 'POST',
+      ip: '127.0.0.1',
       headers: {},
     };
     mockResponse = {
@@ -18,13 +39,19 @@ describe('Nonce Middleware', () => {
     nextFunction = jest.fn();
   });
 
-  test('generateNonce creates a unique hex string', () => {
-    const nonce1 = generateNonce();
-    const nonce2 = generateNonce();
+  test('should pass for exempt routes', () => {
+    const exemptRoutes = ['/healthz', '/metrics', '/hello'];
+    
+    exemptRoutes.forEach(route => {
+      mockRequest.path = route;
+      nonceMiddleware(
+        mockRequest as Request, 
+        mockResponse as Response, 
+        nextFunction
+      );
 
-    expect(nonce1).not.toEqual(nonce2);
-    expect(nonce1.length).toBeGreaterThan(0);
-    expect(/^[0-9a-f]+$/.test(nonce1)).toBeTruthy();
+      expect(nextFunction).toHaveBeenCalled();
+    });
   });
 
   test('should reject request without nonce', () => {
@@ -36,12 +63,20 @@ describe('Nonce Middleware', () => {
 
     expect(mockResponse.status).toHaveBeenCalledWith(400);
     expect(mockResponse.json).toHaveBeenCalledWith(expect.objectContaining({
-      error: 'Missing nonce or timestamp'
+      error: 'Invalid Request'
     }));
   });
 
-  test('should allow request with valid nonce', () => {
-    const nonce = generateNonce();
+  test('should generate unique nonces', () => {
+    const nonce1 = nonceManager.generateNonce();
+    const nonce2 = nonceManager.generateNonce();
+
+    expect(nonce1).not.toEqual(nonce2);
+    expect(nonce1.length).toBeGreaterThan(0);
+  });
+
+  test('should validate request with correct nonce', () => {
+    const nonce = nonceManager.generateNonce();
     const timestamp = Math.floor(Date.now() / 1000);
 
     mockRequest.headers = {
@@ -58,8 +93,8 @@ describe('Nonce Middleware', () => {
     expect(nextFunction).toHaveBeenCalled();
   });
 
-  test('should reject request with expired nonce', () => {
-    const nonce = generateNonce();
+  test('should reject expired nonce', () => {
+    const nonce = nonceManager.generateNonce();
     const timestamp = Math.floor(Date.now() / 1000) - 400; // older than 5 minutes
 
     mockRequest.headers = {
@@ -75,12 +110,12 @@ describe('Nonce Middleware', () => {
 
     expect(mockResponse.status).toHaveBeenCalledWith(400);
     expect(mockResponse.json).toHaveBeenCalledWith(expect.objectContaining({
-      error: 'Nonce expired'
+      error: 'Invalid Nonce'
     }));
   });
 
-  test('should reject duplicate nonce', () => {
-    const nonce = generateNonce();
+  test('should reject reused nonce', () => {
+    const nonce = nonceManager.generateNonce();
     const timestamp = Math.floor(Date.now() / 1000);
 
     mockRequest.headers = {
@@ -113,19 +148,7 @@ describe('Nonce Middleware', () => {
 
     expect(mockResponse.status).toHaveBeenCalledWith(400);
     expect(mockResponse.json).toHaveBeenCalledWith(expect.objectContaining({
-      error: 'Nonce already used'
+      error: 'Invalid Nonce'
     }));
-  });
-
-  test('should allow requests to exempt routes', () => {
-    mockRequest.path = '/healthz';
-
-    nonceMiddleware(
-      mockRequest as Request, 
-      mockResponse as Response, 
-      nextFunction
-    );
-
-    expect(nextFunction).toHaveBeenCalled();
   });
 });
