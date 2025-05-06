@@ -1,5 +1,6 @@
 import { Router, RequestHandler } from "express";
 import { verifyBearerToken } from "../middleware/auth";
+import { nonceMiddleware } from "../middleware/nonce";
 
 /******** Builder *********/
 import { fetchTodo } from "../controllers/builder/fetchToDo";
@@ -37,6 +38,9 @@ import { info } from "../controllers/prometheus/info";
 
 const router = Router();
 
+// Global middleware for all non-exempt routes
+router.use(nonceMiddleware);
+
 /********** Builder ***********/
 router.post("/builder/fetch-to-do", fetchTodo as RequestHandler);
 router.post("/builder/add-aggregator-info", addAggregatorInfo as RequestHandler);
@@ -54,8 +58,6 @@ router.post("/summarizer/fetch-summarizer-todo", fetchSummarizerRequest as Reque
 router.post("/summarizer/add-pr-to-summarizer-todo", addSummarizerRequest as RequestHandler);
 router.post("/summarizer/trigger-fetch-audit-result", triggerFetchAuditResultSummarizer as RequestHandler);
 router.post("/summarizer/check-summarizer", checkSummarizerRequest as RequestHandler);
-// router.post("/summarizer/trigger-update-swarms-status", triggerUpdateSwarmsStatus as RequestHandler);
-// router.post("/summarizer/trigger-save-swarms-for-round", triggerSaveSwarmsForRound as RequestHandler);
 
 /********** Planner ***********/
 router.post("/planner/fetch-planner-todo", fetchPlannerRequest as RequestHandler);
@@ -67,7 +69,6 @@ router.post("/planner/trigger-fetch-audit-result", triggerFetchAuditResultPlanne
 router.get("/prometheus/get-assigned-nodes", getAssignedTo as RequestHandler);
 router.post("/prometheus/classification", verifyBearerToken, classification as RequestHandler);
 router.get("/prometheus/info", info as RequestHandler);
-
 
 /****************** Supporter **************/
 router.post("/supporter/bind-key-to-github", bindRequest as RequestHandler);
