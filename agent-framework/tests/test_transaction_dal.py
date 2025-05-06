@@ -5,7 +5,7 @@ from sqlmodel import SQLModel, create_engine, Session
 from prometheus_swarm.database.transaction_dal import TransactionDAL
 from prometheus_swarm.database.models import Transaction
 from prometheus_swarm.database.config import engine as database_engine
-from prometheus_swarm.database.database import get_session
+from prometheus_swarm.database.database import get_session, initialize_database
 
 
 @pytest.fixture(scope="module")
@@ -13,6 +13,8 @@ def setup_db():
     """Create and configure a test database."""
     # In-memory SQLite database for testing
     test_engine = create_engine("sqlite:///:memory:", connect_args={"check_same_thread": False})
+    
+    # Create all tables for the Transaction model
     SQLModel.metadata.create_all(test_engine)
 
     # Patch get_session to use test database
