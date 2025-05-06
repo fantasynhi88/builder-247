@@ -53,7 +53,7 @@ class Transaction(SQLModel, table=True):
     amount: float
     timestamp: datetime = Field(default_factory=datetime.utcnow)
     status: str = Field(default="pending")  # e.g., pending, completed, failed
-    metadata: Optional[str] = None  # JSON-encoded additional transaction details
+    extra_info: Optional[str] = None  # JSON-encoded additional transaction details
     request_id: Optional[str] = None  # for tracking across systems
     source: Optional[str] = None  # origin of the transaction
     destination: Optional[str] = None  # destination of the transaction
