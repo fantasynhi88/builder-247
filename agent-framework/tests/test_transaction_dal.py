@@ -36,7 +36,7 @@ def test_create_transaction(setup_db):
         transaction_type="deposit",
         amount=100.50,
         description="Test deposit",
-        metadata={"source": "bank"}
+        extra_info={"source": "bank"}
     )
 
     assert transaction is not None
@@ -44,7 +44,7 @@ def test_create_transaction(setup_db):
     assert transaction.amount == 100.50
     assert transaction.description == "Test deposit"
     assert transaction.status == "pending"
-    assert transaction.metadata == '{"source": "bank"}'
+    assert transaction.extra_info == '{"source": "bank"}'
 
 
 def test_create_transaction_negative_amount(setup_db):
