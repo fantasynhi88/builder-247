@@ -18,7 +18,7 @@ class TransactionDAL:
         transaction_type: str,
         amount: float,
         description: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
+        extra_info: Optional[Dict[str, Any]] = None,
         source: Optional[str] = None,
         destination: Optional[str] = None,
         status: str = "pending",
@@ -31,7 +31,7 @@ class TransactionDAL:
             transaction_type (str): Type of transaction
             amount (float): Transaction amount
             description (Optional[str]): Transaction description
-            metadata (Optional[Dict[str, Any]]): Additional transaction details
+            extra_info (Optional[Dict[str, Any]]): Additional transaction details
             source (Optional[str]): Transaction source
             destination (Optional[str]): Transaction destination
             status (str): Transaction status
@@ -47,7 +47,7 @@ class TransactionDAL:
             transaction_type=transaction_type,
             amount=amount,
             description=description,
-            metadata=json.dumps(metadata) if metadata else None,
+            extra_info=json.dumps(extra_info) if extra_info else None,
             source=source,
             destination=destination,
             status=status,
